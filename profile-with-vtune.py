@@ -15,20 +15,17 @@ import pandas.api.types as pdty
 VTUNE_PATH = "/opt/intel/oneapi/vtune/latest/bin64/vtune"
 csv_delim = "^"
 default_sampling_interval = 0.1
-sampling_mode = "hw"
 col_inst_event = "Hardware Event Count:INST_RETIRED.ANY"
 col_clk_event = "Hardware Event Count:CPU_CLK_UNHALTED.THREAD"
 col_src_func = "Function"
 col_src_file = "Source File"
 col_src_line = "Source Line"
-col_cpu_self_time = "CPU Time:Self"
-col_cpu_time_pct = "CPU Time:Total"
-col_topdown_func = "Function Stack"
+col_cpu_time = "CPU Time"
 correlation_cutoff = 0.80
 num_bottlenecks = 3
 
 
-def vtune_run_collect(collect_type: str, knobs: list, program_and_args: str, name_suffix: str):
+def vtune_run_collect(collect_type: str, knobs: list, program_and_args: str, name_suffix: str, log_file: str):
     """
     :return: a list of string names for result directories
     """
@@ -49,9 +46,18 @@ def vtune_run_collect(collect_type: str, knobs: list, program_and_args: str, nam
     ]
 
     cmd_str = " ".join(cmd)
+    cmd_str += f" 2>&1 | tee -a {log_file}"
     print(f"Running: {cmd_str}")
 
     subprocess.run(cmd_str, shell=True, check=True)
+
+    # p = subprocess.run(cmd_str, shell=True, check=True, stdout=subprocess.PIPE,
+            # stderr=subprocess.STDOUT)
+# 
+    # with open(log_file, "a") as fh:
+        # fh.write(p.stdout.decode())
+# 
+    # print(p.stdout.decode())
 
     return result_dir
 
@@ -120,14 +126,24 @@ class VTuneHotspotResult(VTuneResult):
         # hotspots has total as 100% for some columns but not
         # for others
         df = self._read_csv()
+        totals = pd.DataFrame(columns=df.columns)
         for col_name, col_data in df.iteritems():
             if pdty.is_numeric_dtype(col_data):
-                if df[col_name][0] == 0:
-                    df[col_name][0] = col_data.sum()
+                totals[col_name] = col_data.sum()
+            else:
+                totals[col_name] = ["Total"]
+        df = pd.concat([df, totals])
+        self._write_csv(df)
+
+    def _sort_by_cputime(self):
+        # only sort the hotspot by function file
+        df = self._read_csv()
+        df.sort_values(col_cpu_time, ascending=False, inplace=True)
         self._write_csv(df)
 
     def compute_more_stats(self):
         self._add_col_totals()
+        self._sort_by_cputime()
 
 
 class VTuneCountersResult(VTuneResult):
@@ -184,17 +200,21 @@ def analyze_threads_vs_hotspots(threads: list, results: dict, name_suffix: str):
     table = {}
     for t in threads:
         df = results[t]._read_csv()
-        df.sort_values(col_cpu_self_time, ascending=False, inplace=True)
         table.setdefault("Threads", []).append(t)
-        table.setdefault("Total_CPU_Time", []).append(df[col_cpu_self_time][0])
+        table.setdefault("Total_CPU_Time", []).append(df[col_cpu_time][0])
+        rem = df[col_cpu_time][0]
         for i in range(1, num_bottlenecks + 1):
-            prefix = f"Rank_{i}"
-            table.setdefault(f"{prefix}_Function", []).append(df[col_topdown_func][i])
-            table.setdefault(f"{prefix}_CPU_seconds", []).append(df[col_cpu_self_time][i])
-            table.setdefault(f"{prefix}_Percent_CPU_Time", []).append(df[col_cpu_time_pct][i])
+            prefix = f"Bottleneck_{i}"
+            table.setdefault(f"{prefix}_Function", []).append(df[col_src_func][i])
+            table.setdefault(f"{prefix}_Source_File", []).append(df[col_src_file][i])
+            table.setdefault(f"{prefix}_CPU_seconds", []).append(df[col_cpu_time][i])
+            frac = df[col_cpu_time][i] / df[col_cpu_time][0]
+            table.setdefault(f"{prefix}_Percent_CPU_Time", []).append(frac)
+            rem -= df[col_cpu_time][i]
+            table.setdefault(f"Rem_Time_without_{prefix}", []).append(rem)
 
     main_df = pd.DataFrame(table)
-    out_file = f"threads-vs-cputime-{name_suffix}.csv"
+    out_file = f"vtune-threads-vs-hotspots-{name_suffix}.csv"
     main_df.to_csv(out_file, sep=csv_delim, index=False)
 
 
@@ -209,19 +229,19 @@ def analyze_threads_vs_counters(threads: list, results: dict, name_suffix: str):
         table.setdefault("Total_Instructions", []).append(df[col_inst_event][0])
         table.setdefault("Cycle_Correlated_Events", []).append(",".join(results[t].correlated_counters))
 
-        rem_cyc = df[col_clk_event][0]
+        rem = df[col_clk_event][0]
         for i in range(1, num_bottlenecks + 1):
-            prefix = f"Rank_{i}"
+            prefix = f"Bottleneck_{i}"
             table.setdefault(f"{prefix}_Function", []).append(df[col_src_func][i])
             table.setdefault(f"{prefix}_Source_File", []).append(df[col_src_file][i])
             table.setdefault(f"{prefix}_Cycles", []).append(df[col_clk_event][i])
             frac = df[col_clk_event][i] / df[col_clk_event][0]
             table.setdefault(f"{prefix}_Cycles_Fraction", []).append(frac)
-            rem_cyc -= df[col_clk_event][i]
-            table.setdefault(f"Rem_Cycles_without_{prefix}", []).append(rem_cyc)
+            rem -= df[col_clk_event][i]
+            table.setdefault(f"Rem_Cycles_without_{prefix}", []).append(rem)
 
     main_df = pd.DataFrame(table)
-    out_file = f"threads-vs-counters-{name_suffix}.csv"
+    out_file = f"vtune-threads-vs-counters-{name_suffix}.csv"
     main_df.to_csv(out_file, sep=csv_delim, index=False)
 
 
@@ -257,19 +277,22 @@ if __name__ == "__main__":
         "-sampling_interval",
         default=default_sampling_interval,
         help="""
-            Specify sampling interval for stack sampling in milliseconds
+            Specify sampling interval for hardware stack sampling in milliseconds.
+            Applies only to counters 
             Choose such that the profiled section amounts to 100-1000 samples
-            min value = 0.1
-            max value = 10000
+            min value = 0.1 ms
+            max value = 10000 ms
+            Also, sampling interval for -sampling_mode=sw is fixed at 10ms by
+            VTune. Use sw mode sampling to profile code that runs for > 1s
             """,
     )
 
-    parser.add_argument(
-        "--sampling_mode",
-        "-sampling_mode",
-        default=sampling_mode,
-        help="Specify sampling mode for stack sampling. Applies only to hotspots",
-    )
+    # parser.add_argument(
+        # "--sampling_mode",
+        # "-sampling_mode",
+        # default=sampling_mode,
+        # help="Specify sampling mode for stack sampling. Applies only to hotspots.  Possible values: hw, sw. Default: sw",
+    # )
 
     parser.add_argument(
         "program_and_args", nargs="*", help="Specify an executable with args without the threads argument -t"
@@ -279,18 +302,19 @@ if __name__ == "__main__":
 
     reports = []  # contains pairs of (reprot-type, group-by)
     knobs = []
-    knobs.append(f"sampling-interval={args.sampling_interval}")
     vtune_collect = ""
     if args.analyze == "hotspots":
         vtune_collect = "hotspots"
-        knobs.append(f"sampling-mode={args.sampling_mode}")
         reports = [
             # WARNING: Order matters. first report is used for further analysis
+            ("hotspots", "function"),
+            ("hotspots", "source-line"),
             ("top-down", "function"),
             ("callstacks", "callstack"),
         ]
     elif args.analyze == "counters":
         vtune_collect = "uarch-exploration"
+        knobs.append(f"sampling-interval={args.sampling_interval}")
         reports = [
             # WARNING: Order matters. first report is used for further analysis
             ("hw-events", "function"),
@@ -305,11 +329,12 @@ if __name__ == "__main__":
     results = {}
     timestamp = datetime.now().strftime("%Y-%m-%d_%H.%M.%S")
     prog_name = Path(args.program_and_args[0]).parts[-1]
+    log_file = f"vtune-run-log-{prog_name}-{timestamp}.txt"
     for t in threads:
         name_suffix = f"{prog_name}-{args.tag}-t-{t}-{timestamp}"
 
         prog_and_args = " ".join(args.program_and_args) + f" -t {t}"
-        vtune_raw_dir = vtune_run_collect(vtune_collect, knobs, prog_and_args, name_suffix)
+        vtune_raw_dir = vtune_run_collect(vtune_collect, knobs, prog_and_args, name_suffix, log_file)
 
         csv_files = []
         for (r, groupby) in reports:
