@@ -208,8 +208,8 @@ def analyze_threads_vs_hotspots(threads: list, results: dict, name_suffix: str):
             table.setdefault(f"{prefix}_Function", []).append(df[col_src_func][i])
             table.setdefault(f"{prefix}_Source_File", []).append(df[col_src_file][i])
             table.setdefault(f"{prefix}_CPU_seconds", []).append(df[col_cpu_time][i])
-            frac = df[col_cpu_time][i] / df[col_cpu_time][0]
-            table.setdefault(f"{prefix}_Percent_CPU_Time", []).append(frac)
+            frac = 100.0 * df[col_cpu_time][i] / df[col_cpu_time][0]
+            table.setdefault(f"{prefix}_Percent_Time", []).append(frac)
             rem -= df[col_cpu_time][i]
             table.setdefault(f"Rem_Time_without_{prefix}", []).append(rem)
 
