@@ -4,6 +4,7 @@ import argparse
 import multiprocessing
 import os
 import re
+import socket
 import subprocess
 import sys
 from datetime import datetime
@@ -75,6 +76,14 @@ def vtune_run_report(report_type: str, result_dir: str, groupby: str, name_suffi
         groupby = f"function -group-by {groupby}"
 
     out_fh = open(csv_file, "w")
+
+    # Stupid vtune appends hostname to result-dir on clusters like epee even with 1
+    # node. 
+    if not Path.is_dir(Path(result_dir)):
+        hostname = socket.gethostname()
+        result_dir = f"{result_dir}.{hostname}"
+        csv_file = f"{csv_file}.{hostname}"
+        assert Path.is_dir(Path(result_dir))
 
     cmd = [
         VTUNE_PATH,
