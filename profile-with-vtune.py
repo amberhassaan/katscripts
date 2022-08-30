@@ -52,14 +52,6 @@ def vtune_run_collect(collect_type: str, knobs: list, program_and_args: str, nam
 
     subprocess.run(cmd_str, shell=True, check=True)
 
-    # p = subprocess.run(cmd_str, shell=True, check=True, stdout=subprocess.PIPE,
-            # stderr=subprocess.STDOUT)
-# 
-    # with open(log_file, "a") as fh:
-        # fh.write(p.stdout.decode())
-# 
-    # print(p.stdout.decode())
-
     return result_dir
 
 
