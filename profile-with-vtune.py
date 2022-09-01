@@ -67,10 +67,8 @@ def vtune_run_report(report_type: str, result_dir: str, groupby: str, name_suffi
     if groupby == "source-line":
         groupby = f"function -group-by {groupby}"
 
-    out_fh = open(csv_file, "w")
-
     # Stupid vtune appends hostname to result-dir on clusters like epee even with 1
-    # node. 
+    # node.
     if not Path.is_dir(Path(result_dir)):
         hostname = socket.gethostname()
         result_dir = f"{result_dir}.{hostname}"
@@ -91,9 +89,8 @@ def vtune_run_report(report_type: str, result_dir: str, groupby: str, name_suffi
 
     cmd_str = " ".join(cmd)
 
-    subprocess.run(cmd_str, shell=True, check=True, stdout=out_fh)
-
-    out_fh.close()
+    with open(csv_file, "w") as out_fh:
+        subprocess.run(cmd_str, shell=True, check=True, stdout=out_fh)
 
     return csv_file
 
@@ -106,13 +103,13 @@ class VTuneResult:
         self.csv_files = csv_files
         self.main_csv = csv_files[0]
 
-    def _read_csv(self, csv_file:str = None):
+    def _read_csv(self, csv_file: str = None):
         if not csv_file:
             csv_file = self.main_csv
         df = pd.read_csv(csv_file, sep=csv_delim)
         return df
 
-    def _write_csv(self, df:pd.DataFrame, csv_file:str = None):
+    def _write_csv(self, df: pd.DataFrame, csv_file: str = None):
         if not csv_file:
             csv_file = self.main_csv
         df.to_csv(csv_file, sep=csv_delim, index=False)
@@ -289,10 +286,10 @@ if __name__ == "__main__":
     )
 
     # parser.add_argument(
-        # "--sampling_mode",
-        # "-sampling_mode",
-        # default=sampling_mode,
-        # help="Specify sampling mode for stack sampling. Applies only to hotspots.  Possible values: hw, sw. Default: sw",
+    # "--sampling_mode",
+    # "-sampling_mode",
+    # default=sampling_mode,
+    # help="Specify sampling mode for stack sampling. Applies only to hotspots.  Possible values: hw, sw. Default: sw",
     # )
 
     parser.add_argument(
