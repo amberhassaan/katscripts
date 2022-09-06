@@ -59,6 +59,12 @@ def vtune_run_report(report_type: str, result_dir: str, groupby: str, name_suffi
     """
     :return: a list of string names of csv report files
     """
+    # vtune appends hostname to result-dir on mpi-jobs, like on epee
+    if not Path.is_dir(Path(result_dir)):
+        hostname = socket.gethostname()
+        result_dir = f"{result_dir}.{hostname}"
+        name_suffix = f"{name_suffix}.{hostname}"
+        assert Path.is_dir(Path(result_dir))
 
     csv_file = f"vtune-{report_type}-{groupby}-{name_suffix}.csv"
     # csv_file = f"vtune-{report_type}-{name_suffix}.csv"
@@ -66,14 +72,6 @@ def vtune_run_report(report_type: str, result_dir: str, groupby: str, name_suffi
     # special tweak. add gropuby function as well ahead of source-line
     if groupby == "source-line":
         groupby = f"function -group-by {groupby}"
-
-    # Stupid vtune appends hostname to result-dir on clusters like epee even with 1
-    # node.
-    if not Path.is_dir(Path(result_dir)):
-        hostname = socket.gethostname()
-        result_dir = f"{result_dir}.{hostname}"
-        csv_file = f"{csv_file}.{hostname}"
-        assert Path.is_dir(Path(result_dir))
 
     cmd = [
         VTUNE_PATH,
@@ -348,8 +346,9 @@ if __name__ == "__main__":
         else:
             assert False
 
-    name_suffix = f"{prog_name}-{args.tag}-{timestamp}"
-    if args.analyze == "counters":
-        analyze_threads_vs_counters(threads, results, name_suffix)
-    elif args.analyze == "hotspots":
-        analyze_threads_vs_hotspots(threads, results, name_suffix)
+    if len(threads) > 1: # multi threaded run
+        name_suffix = f"{prog_name}-{args.tag}-{timestamp}"
+        if args.analyze == "counters":
+            analyze_threads_vs_counters(threads, results, name_suffix)
+        elif args.analyze == "hotspots":
+            analyze_threads_vs_hotspots(threads, results, name_suffix)
