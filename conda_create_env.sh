@@ -36,7 +36,8 @@ else
 fi
 
 #create environment
-$condaroot/bin/conda-lock install -n $name  $repo/external/katana/conda-lock.yml
+# assuming that external/katana/conda-lock.yml is subsumed by conda-lock.yml
+# $condaroot/bin/conda-lock install -n $name  $repo/external/katana/conda-lock.yml
 $condaroot/bin/conda-lock install -n $name $repo/conda-lock.yml
 
 source $HOME/miniconda3/etc/profile.d/mamba.sh
