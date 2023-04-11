@@ -43,7 +43,7 @@ $condaroot/bin/conda-lock install -n $name $repo/conda-lock.yml
 source $HOME/miniconda3/etc/profile.d/mamba.sh
 
 mamba activate $name
-mamba install numactl-devel-cos7-x86_64 # For x86_64 builds
-mamba deactivate
+mamba install numactl-devel-cos7-x86_64 --freeze-installed # For x86_64 builds
+# mamba deactivate
 
 
